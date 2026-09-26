@@ -18,14 +18,14 @@ export class Engine {
 
 	}
 
-	async init() {
+	async init( { allowUnsupported = false } = {} ) {
 
 		const canvas = document.createElement( 'canvas' );
 		canvas.tabIndex = 0;
 		this.container.appendChild( canvas );
 		this.canvas = canvas;
 		this.domElement = canvas;
-		await GPU.init( { canvas } );
+		await GPU.init( { canvas, allowUnsupported } );
 		this.meshRenderer = new MeshRenderer();
 		this.meshRenderer.syncPipelines = false; // compile in the background (App.precompile waits for them)
 		this.camera = new PerspectiveCamera( 62, window.innerWidth / window.innerHeight, 0.06, 60000 );

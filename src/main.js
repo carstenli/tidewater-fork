@@ -2,6 +2,7 @@ import './core/BenchSeed.js';
 import { App } from './App.js';
 import { UI } from './ui/UI.js';
 import { AppUI } from './ui/AppUI.js';
+import { GPU, GPUUnsupportedError } from './engine/gpu/GPU.js';
 
 // ?bench runs in background tabs too (automation): rAF does not fire in a hidden page
 if ( /[?&]bench\b/.test( location.search ) ) {
@@ -15,6 +16,9 @@ if ( /[?&]bench\b/.test( location.search ) ) {
 const ui = new UI();
 const app = new App();
 window.__ui = ui;
+
+// a lost device (driver reset, GPU hang, out of memory) freezes the view: say so instead
+GPU.onLost = ( info ) => ui.setLoadingError( 'The GPU stopped responding' + ( info.message ? ` (${ info.message })` : '' ) + '. Reload the page to continue.' );
 
 app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async () => {
 
@@ -42,6 +46,6 @@ app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async ()
 } ).catch( ( e ) => {
 
 	console.error( e );
-	ui.setLoadingError( 'Something went wrong: ' + e.message );
+	ui.setLoadingError( e instanceof GPUUnsupportedError ? e.message : 'Something went wrong: ' + e.message );
 
 } );

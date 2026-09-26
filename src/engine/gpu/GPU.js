@@ -8,6 +8,43 @@
 // range written twice in one frame keeps only the last value for every pass. Anything that changes
 // between passes of a frame needs its own buffer (or its own offset).
 
+// Limits the shaders cannot run without. The WebGPU defaults (16 sampled / 4 storage textures per
+// stage) are not enough: the beauty pass samples ~31 textures in one fragment shader and the mip
+// chains write 5 storage textures in one dispatch. Below these, pipelines fail to build and the
+// scene draws partly or not at all, so the adapter is rejected up front with a readable reason.
+export const REQUIRED_LIMITS = {
+	maxSampledTexturesPerShaderStage: { min: 32, what: 'textures per shader' },
+	maxStorageTexturesPerShaderStage: { min: 8, what: 'storage textures per shader' },
+};
+
+// Adapter limits below REQUIRED_LIMITS, as [ { name, have, need, what } ].
+export function missingLimits( limits ) {
+
+	const out = [];
+	for ( const name in REQUIRED_LIMITS ) {
+
+		const { min, what } = REQUIRED_LIMITS[ name ];
+		const have = limits[ name ];
+		if ( have !== undefined && have < min ) out.push( { name, have, need: min, what } );
+
+	}
+
+	return out;
+
+}
+
+export class GPUUnsupportedError extends Error {
+
+	constructor( message, missing = [] ) {
+
+		super( message );
+		this.name = 'GPUUnsupportedError';
+		this.missing = missing;
+
+	}
+
+}
+
 export const GPU = {
 
 	device: null,
@@ -24,15 +61,28 @@ export const GPU = {
 	frame: 0,
 	samplers: null,
 	_submitHooks: [],
+	// called with the GPUDeviceLostInfo when the device is lost (not when it is destroyed on purpose)
+	onLost: null,
 
-	async init( { canvas = null, requiredLimits = {}, headless = false } = {} ) {
+	// allowUnsupported: build on an adapter below REQUIRED_LIMITS anyway (debugging; expect errors)
+	async init( { canvas = null, requiredLimits = {}, headless = false, allowUnsupported = false } = {} ) {
 
-		if ( ! navigator.gpu ) throw new Error( 'WebGPU is not available in this browser.' );
+		if ( ! navigator.gpu ) throw new GPUUnsupportedError( 'WebGPU is not available in this browser. Tidewater needs a recent Chrome, Edge or Safari.' );
 		const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance' } );
-		if ( ! adapter ) throw new Error( 'No WebGPU adapter found.' );
+		if ( ! adapter ) throw new GPUUnsupportedError( 'No WebGPU adapter found. WebGPU may be turned off, or this GPU is not supported by the browser.' );
 		this.adapter = adapter;
 
 		const L = adapter.limits;
+		const missing = missingLimits( L );
+		if ( missing.length ) {
+
+			const list = missing.map( ( m ) => `${ m.need } ${ m.what } (this GPU: ${ m.have })` ).join( ', ' );
+			const msg = `This GPU is not supported: Tidewater needs ${ list }. Try a recent Chrome, Edge or Safari on a desktop or laptop GPU.`;
+			if ( ! allowUnsupported ) throw new GPUUnsupportedError( msg, missing );
+			console.warn( msg + ' Continuing anyway (?ignoreLimits).' );
+
+		}
+
 		const want = {
 			maxSampledTexturesPerShaderStage: 32,
 			maxSamplersPerShaderStage: 16,
@@ -61,7 +111,12 @@ export const GPU = {
 		this.device = device;
 		this.queue = device.queue;
 		this.limits = device.limits;
-		device.lost.then( ( info ) => console.error( 'WebGPU device lost:', info.message ) );
+		device.lost.then( ( info ) => {
+
+			console.error( 'WebGPU device lost:', info.message );
+			if ( info.reason !== 'destroyed' && this.onLost ) this.onLost( info );
+
+		} );
 		device.addEventListener && device.addEventListener( 'uncapturederror', ( e ) => console.error( 'WebGPU:', e.error.message.split( '\n' ).slice( 0, 6 ).join( '\n' ) ) );
 
 		if ( canvas && ! headless ) {

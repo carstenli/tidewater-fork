@@ -3261,6 +3261,10 @@ export class UI {
 		const L = document.getElementById( 'loader' );
 		if ( ! L ) return;
 		const ld = this._loaderState();
+		// also after the loader was dismissed (a lost device mid-game): bring it back over the frozen view
+		L.style.display = '';
+		L.classList.remove( 'tw-hidden' );
+		if ( document.pointerLockElement ) document.exitPointerLock();
 		L.classList.add( 'tw-error' );
 		L.classList.remove( 'is-compiling' );
 		ld.status = String( message );
