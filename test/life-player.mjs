@@ -9,6 +9,8 @@ import { WORLD } from '../src/world/WorldLayout.js';
 import { Player } from '../src/player/Player.js';
 import { BoatController } from '../src/player/BoatController.js';
 import { FlyCamera } from '../src/player/FlyCamera.js';
+import { HOUSE } from '../src/world/boat/Wheelhouse.js';
+import { HullLines } from '../src/world/boat/HullLines.js';
 
 let fails = 0;
 const check = ( ok, msg ) => {
@@ -83,6 +85,9 @@ const model = {
 	propeller: new E.Vector3( 0, - 0.55, - 3.3 ),
 	rudder: new E.Vector3( 0, - 0.5, - 3.6 ),
 	dimensions: { houseRoofHeight: 2.5 },
+	// deck walking (Player 'deck' mode): the real hull lines, no deck furniture
+	lines: new HullLines(),
+	colliders: [],
 	setThrottle( v ) { calls.throttle = v; },
 	setSteering( v ) { calls.steer = v; },
 	setPropellerRPM( v ) { calls.rpm = v; },
@@ -167,7 +172,16 @@ run( 0.1 );
 check( player.nearBoat(), 'boat: near the board point' );
 input.press( 'KeyE' );
 run( dt );
-check( player.mode === 'boat' && boat.driven && ! boat.moored, `boat: boarded (mode ${ player.mode })` );
+check( player.mode === 'deck' && ! boat.driven, `boat: boarded onto the deck (mode ${ player.mode })` );
+run( 0.5 );
+check( Math.abs( player.deckPos.y - model.lines.deckY ) < 0.05, `boat: standing on the sole (y ${ player.deckPos.y.toFixed( 2 ) })` );
+// walk up to the helm seat, take the wheel
+player.deckPos.set( HOUSE.helmX, model.lines.deckY, HOUSE.seatZ );
+run( dt );
+check( player.prompt && player.prompt.text === 'Take the helm', `boat: helm prompt (${ player.prompt && player.prompt.text })` );
+input.press( 'KeyE' );
+run( dt );
+check( player.mode === 'boat' && boat.driven && ! boat.moored, `boat: at the helm (mode ${ player.mode })` );
 
 // ---- drive: full ahead, then a turn
 const b0 = boat.position.clone();
@@ -197,6 +211,14 @@ check( player.camMode === 'first' && camera.position.distanceTo( boat.toWorld( m
 
 // ---- coast, then leave the boat (out at sea: swim)
 run( 15 );
+input.press( 'KeyE' );
+run( dt );
+check( player.mode === 'deck' && ! boat.driven, `boat: left the helm (mode ${ player.mode })` );
+// out at sea there is no shore to step onto: jump overboard at the rail
+const rail = model.exitPoints[ 0 ];
+player.deckPos.set( rail.x, model.lines.deckY, rail.z );
+run( 0.5 );
+check( player.prompt && player.prompt.text === 'Jump overboard', `boat: overboard prompt at the rail (${ player.prompt && player.prompt.text })` );
 input.press( 'KeyE' );
 run( 1 );
 check( player.mode === 'swim' || player.mode === 'walk', `boat: left the boat (mode ${ player.mode })` );
