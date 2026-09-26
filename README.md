@@ -14,8 +14,10 @@ breach. It runs directly on WebGPU and WGSL with its own small rendering engine,
 ## Requirements
 
 - A browser with WebGPU: a recent Chrome, Edge or Safari.
-- A capable GPU. It targets 60 fps at 2560×1267 on an Apple M5 Pro, and dynamic resolution scales
-  the render down on slower machines.
+- A GPU that WebGPU lets bind 32 textures and 8 storage textures per shader. Desktop and laptop GPUs
+  do; the WebGPU defaults (16 and 4) are not enough, and the loader says so instead of starting.
+- It targets 60 fps at 2560×1267 on an Apple M5 Pro. On slower machines lower the render scale in the
+  settings panel (H) or with `?scale=0.75`.
 - The first load compiles several hundred shaders, which can take a minute or more. Later visits are
   faster because the browser caches them.
 
@@ -120,6 +122,10 @@ Add these to the URL, for example `?fly&noAudio`:
 | `noCaustics` | Skip caustics |
 | `noVeg` | Skip vegetation |
 | `noSim` | Skip the swash (shallow-water) simulation |
+| `scale=0.75` | Internal render resolution as a fraction of the screen (the temporal upscaler reconstructs the output) |
+| `oldClouds` | The previous volumetric cloud renderer |
+| `profile` | GPU timings in the FPS readout (needs `timestamp-query`) |
+| `ignoreLimits` | Start on a GPU below the required limits anyway (debugging; expect missing passes) |
 
 ## Running locally
 
