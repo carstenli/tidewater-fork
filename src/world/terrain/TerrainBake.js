@@ -1,4 +1,4 @@
-import { DataUtils } from 'three/webgpu';
+import { DataUtils } from '../../engine/index.js';
 
 // CPU bakes of the terrain maps sampled by the terrain material (and the water):
 //   normal RGBA8: nx * 0.5 + 0.5, nz * 0.5 + 0.5, rock mask, ambient occlusion
@@ -76,7 +76,7 @@ export function bakeTerrainMaps( terrain ) {
 	const normal = new Uint8Array( res * res * 4 );
 	const splat = new Uint8Array( res * res * 4 );
 	const sand = terrain.sand, path = terrain.path, gully = terrain.gully;
-	const seagrass = terrain.seagrass, rubble = terrain.rubble;
+	const seagrass = terrain.seagrass, rubble = terrain.rubble, scarp = terrain.scarp;
 	const inv2t = 1 / ( 2 * texel );
 	for ( let j = 0; j < res; j ++ ) {
 
@@ -118,7 +118,8 @@ export function bakeTerrainMaps( terrain ) {
 			splat[ o ] = sand[ k ];
 			splat[ o + 1 ] = path[ k ];
 			splat[ o + 2 ] = seagrass ? Math.max( gully[ k ], seagrass[ k ] ) : gully[ k ];
-			splat[ o + 3 ] = rubble ? rubble[ k ] : 0;
+			// alpha: seabed rubble below the sea, the eroded beach scarp face on land
+			splat[ o + 3 ] = Math.max( rubble ? rubble[ k ] : 0, scarp ? scarp[ k ] : 0 );
 
 		}
 

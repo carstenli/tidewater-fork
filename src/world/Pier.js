@@ -1,4 +1,4 @@
-import * as THREE from 'three/webgpu';
+import { Color, Vector3 } from '../engine/index.js';
 import { WORLD } from './WorldLayout.js';
 import {
 	WOOD, HARD, C, lin, bollard, cleat, tireFender, ropeCoil, ropeLoop, lifeRing, lampPost,
@@ -31,8 +31,8 @@ export const PIER = {
 	capH: 0.26,
 };
 
-const _v = new THREE.Vector3();
-const _h = new THREE.Vector3();
+const _v = new Vector3();
+const _h = new Vector3();
 
 export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = null, hang = null } ) {
 
@@ -45,12 +45,20 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 	const capBot = capTop - PIER.capH;
 	const ground = ( x, z ) => terrain.heightAt( x, z );
 	const pierWood = ( w0 = 0.6, w1 = 0.95 ) => WOOD( rand.next(), rand.range( w0, w1 ), 0, 0 );
+	// timber tone per piece: most boards close to the average, some dark (water-stained, oily) or
+	// pale (sun-bleached, recently planed) - an old pier is a patchwork of repairs
 	const tone = () => {
 
-		const k = rand.range( 0.86, 1.08 ), w = rand.range( - 0.01, 0.04 );
-		return [ k * ( 1 + w ), k, k * ( 1 - w ) ];
+		let k = rand.range( 0.84, 1.1 );
+		const r = rand.next();
+		if ( r < 0.1 ) k *= rand.range( 0.7, 0.82 );
+		else if ( r > 0.94 ) k *= rand.range( 1.1, 1.2 );
+		const w = rand.range( - 0.02, 0.06 );
+		return [ k * ( 1 + w ), k, k * ( 1 - w * 1.2 ) ];
 
 	};
+	// a replacement board: fresh, warm, not yet silvered
+	const freshTone = () => [ rand.range( 1.04, 1.1 ), rand.range( 0.98, 1.02 ), rand.range( 0.9, 0.95 ) ];
 	const info = { lamps: [], bollards: [], hung: [] };
 
 	const addBox = ( cx, cy, cz, hx, hy, hz, opts ) => colliders.addBox( _v.set( cx, cy, cz ), _h.set( hx, hy, hz ), 0, opts );
@@ -60,14 +68,44 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 
 		const g = ground( px, pz );
 		const bottom = g - 1.5;
-		const r = opts.r ?? PIER.pileR * rand.range( 0.92, 1.08 );
+		const r = opts.r ?? PIER.pileR * rand.range( 0.84, 1.16 );
 		const post = top > DK;
 		const h = top - bottom;
-		const tilt = post ? 0 : 0.012;
-		const data = WOOD( rand.next(), rand.range( 0.75, 1.0 ), 0, 0 );
-		B.cyl( 'wood', px, bottom, pz, r * 0.93, r * 1.06, h, {
-			segs: 10, capTop: ! post || !! opts.flatTop, rx: rand.range( - tilt, tilt ), rz: rand.range( - tilt, tilt ), tint: tone(), data,
+		// driven piles wander: posts that carry a rail lean less
+		const tilt = post ? 0.008 : 0.028;
+		const data = WOOD( rand.next(), rand.range( 0.8, 1.0 ), 0, 0 );
+		const rx = rand.range( - tilt, tilt ), rz = rand.range( - tilt, tilt );
+		B.cyl( 'wood', px, bottom, pz, r * rand.range( 0.86, 0.95 ), r * 1.06, h, {
+			segs: 10, capTop: ! post || !! opts.flatTop, rx, rz, tint: tone(), data,
 		} );
+		const wl = 0.0; // mean sea level
+		// sistered repair: a shorter, thinner pile bolted alongside a rotten one
+		if ( ! post && rand.chance( 0.18 ) && top - g > 2.5 ) {
+
+			const a = rand.range( 0, Math.PI * 2 ), d = r + 0.08;
+			const sx = px + Math.cos( a ) * d, sz = pz + Math.sin( a ) * d;
+			const sb = Math.max( g - 0.5, bottom ), st = top - rand.range( 0.05, 0.4 );
+			B.cyl( 'wood', sx, sb, sz, 0.075, 0.085, st - sb, { segs: 7, rx: rand.range( - 0.01, 0.01 ), rz: rand.range( - 0.01, 0.01 ), tint: freshTone(), data: WOOD( rand.next(), rand.range( 0.2, 0.45 ), 0, 0 ) } );
+			for ( const by of [ wl + 0.6, st - 0.3 ] ) {
+
+				if ( by < sb + 0.2 ) continue;
+				B.cyl( 'hard', ( px + sx ) / 2, by, ( pz + sz ) / 2, 0.012, 0.012, d + 0.1, { segs: 5, rx: Math.PI / 2, ry: - a + Math.PI / 2, tint: C.iron, data: HARD( rand.next(), 0.95, 0.4, 0.7 ) } );
+
+			}
+
+		}
+
+		// old mooring rope wrapped round a pile above the water, or a tyre slipped over it
+		if ( ! post && rand.chance( 0.1 ) ) {
+
+			const y = wl + rand.range( 0.7, 1.4 );
+			for ( let k = 0; k < 3; k ++ ) B.torus( 'rope', px, y + k * 0.035, pz, r + 0.02, 0.018, { rx: rand.range( - 0.08, 0.08 ), radial: 5, tubular: 14, tint: rand.chance( 0.5 ) ? C.rope : C.ropeDark, data: [ rand.next(), 0.8, 0, 0 ] } );
+
+		} else if ( ! post && rand.chance( 0.05 ) ) {
+
+			B.torus( 'hard', px, wl + rand.range( 0.3, 0.9 ), pz, r + 0.2, 0.1, { rx: rand.range( - 0.25, 0.25 ), rz: rand.range( - 0.2, 0.2 ), radial: 6, tubular: 14, tint: C.rubber, data: HARD( rand.next(), 0, 0, 0.85 ) } );
+
+		}
 		if ( post && ! opts.flatTop ) {
 
 			B.cyl( 'wood', px, top, pz, r * 0.5, r * 0.93, 0.07, { segs: 10, tint: tone(), data } );
@@ -107,8 +145,14 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 		const yBot = Math.max( clearBottom + 0.35, yTop - 4.2 );
 		if ( yTop - yBot < 0.9 ) return;
 		const off = PIER.pileR + 0.035;
-		B.beam( 'wood', [ xa, yTop, bz + off ], [ xb, yBot, bz + off ], 0.05, 0.2, { tint: tone(), data: pierWood( 0.75, 1 ) } );
-		B.beam( 'wood', [ xa, yBot, bz - off ], [ xb, yTop, bz - off ], 0.05, 0.2, { tint: tone(), data: pierWood( 0.75, 1 ) } );
+		// bays differ: one brace lost to a storm, braces replaced at slightly different heights
+		const r = rand.next();
+		const j = () => rand.range( - 0.18, 0.18 );
+		const piece = () => rand.chance( 0.2 ) ? { tint: freshTone(), data: WOOD( rand.next(), rand.range( 0.25, 0.5 ), 0, 0 ) } : { tint: tone(), data: pierWood( 0.8, 1 ) };
+		if ( r > 0.12 ) B.beam( 'wood', [ xa, yTop + j(), bz + off ], [ xb, yBot + j(), bz + off ], 0.05, rand.range( 0.17, 0.22 ), piece() );
+		if ( r < 0.84 ) B.beam( 'wood', [ xa, yBot + j(), bz - off ], [ xb, yTop + j(), bz - off ], 0.05, rand.range( 0.17, 0.22 ), piece() );
+		// a horizontal waler here and there
+		if ( rand.chance( 0.25 ) ) B.beam( 'wood', [ xa - 0.1, yBot + 0.3, bz + off + 0.05 ], [ xb + 0.1, yBot + 0.3 + rand.range( - 0.06, 0.06 ), bz + off + 0.05 ], 0.05, 0.18, { tint: tone(), data: pierWood( 0.85, 1 ) } );
 
 	};
 
@@ -154,9 +198,10 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 				const xo = X + side * ( PIER.pileOff + PIER.pileR + 0.03 );
 				const g = Math.max( ground( X + side * PIER.pileOff, bz ), ground( X + side * PIER.pileOff, bz2 ) );
 				const yTop = capBot - 0.2, yBot = Math.max( g + 0.4, yTop - 3.2 );
-				if ( yTop - yBot > 0.9 ) {
+				if ( yTop - yBot > 0.9 && rand.chance( 0.85 ) ) {
 
-					B.beam( 'wood', [ xo, yTop, bz + 0.25 ], [ xo, yBot, bz2 - 0.25 ], 0.05, 0.2, { tint: tone(), data: pierWood( 0.8, 1 ) } );
+					const flip = rand.chance( 0.3 );
+					B.beam( 'wood', [ xo, flip ? yBot : yTop, bz + 0.25 + rand.range( 0, 0.2 ) ], [ xo, flip ? yTop : yBot, bz2 - 0.25 - rand.range( 0, 0.2 ) ], 0.05, rand.range( 0.17, 0.22 ), { tint: tone(), data: pierWood( 0.8, 1 ) } );
 
 				}
 
@@ -180,18 +225,48 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 
 	}
 
+	// One deck board centred on (cx, zc), length L along x. Old decking is irregular: boards shrink,
+	// cup and twist, ends don't line up, some have been replaced with fresh timber, some are split
+	// and a very few are gone. Walkway boards get a worn path down the middle (passed to the wood
+	// material as paint = -( 1 + path centre u ), see VillageMaterials).
+	function plank( cx, zc, L, head ) {
+
+		if ( rand.chance( head ? 0.006 : 0.012 ) ) return; // missing board
+		const newer = rand.chance( 0.07 );
+		const wth = newer ? rand.range( 0.25, 0.45 ) : rand.range( 0.55, 1.0 );
+		const t = newer ? freshTone() : tone();
+		// boards nearly fill the 0.215 m pitch (gaps ~0.5-2.5 cm): wider gaps turned the distant deck
+		// into rows of sub-pixel dark lines that no anti-aliasing kept steady
+		const wdt = rand.range( 0.198, 0.206 );
+		const yOff = rand.range( 0, 0.014 ) + ( rand.chance( 0.08 ) ? rand.range( 0.006, 0.016 ) : 0 );
+		const e0 = rand.range( - 0.06, 0.05 ), e1 = rand.range( - 0.05, 0.06 );
+		const xa = cx - L / 2 + e0, xb = cx + L / 2 + e1;
+		const opts = () => ( {
+			grain: 0, ry: rand.range( - 0.012, 0.012 ), rx: rand.range( - 0.022, 0.022 ), rz: rand.range( - 0.006, 0.006 ), tint: t,
+		} );
+		const walk = ( u0 ) => head ? 0 : - ( 1 + ( X - u0 ) ); // path centre along this piece
+		const zj = zc + rand.range( - 0.004, 0.004 );
+		if ( ! newer && rand.chance( 0.05 ) ) {
+
+			// split board: two pieces with a ragged gap
+			const xs = rand.range( xa + 0.4, xb - 0.4 );
+			B.box( 'wood', ( xa + xs - 0.01 ) / 2, DK - plankT / 2 - yOff, zj, xs - xa - 0.01, plankT, wdt, { ...opts(), data: WOOD( rand.next(), wth, walk( xa ), 7 ) } );
+			B.box( 'wood', ( xs + 0.012 + xb ) / 2, DK - plankT / 2 - yOff - 0.004, zj + rand.range( - 0.004, 0.004 ), xb - xs - 0.012, plankT, wdt * rand.range( 0.92, 1 ), { ...opts(), data: WOOD( rand.next(), wth, walk( xs + 0.012 ), 7 ) } );
+			return;
+
+		}
+
+		B.box( 'wood', ( xa + xb ) / 2, DK - plankT / 2 - yOff, zj, xb - xa, plankT, wdt, { ...opts(), data: WOOD( rand.next(), wth, walk( xa ), 7 ) } );
+
+	}
+
 	// deck planks (walkway)
 	const pitch = 0.215;
 	const nPl = Math.floor( ( zH - z0 ) / pitch );
 	for ( let i = 0; i < nPl; i ++ ) {
 
 		const zc = z0 + ( i + 0.5 ) * ( zH - z0 ) / nPl;
-		const newer = rand.chance( 0.05 );
-		const wth = newer ? rand.range( 0.05, 0.25 ) : rand.range( 0.5, 0.95 );
-		const t = newer ? [ 1.15, 1.03, 0.88 ] : tone();
-		B.box( 'wood', X + rand.range( - 0.015, 0.015 ), DK - plankT / 2 - rand.range( 0, 0.006 ), zc, PIER.width + rand.range( - 0.03, 0.02 ), plankT, 0.2, {
-			grain: 0, ry: rand.range( - 0.007, 0.007 ), rx: rand.range( - 0.01, 0.01 ), tint: t, data: WOOD( rand.next(), wth, 0, 7 ),
-		} );
+		plank( X, zc, PIER.width, false );
 
 	}
 
@@ -208,9 +283,20 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 			const za = bentZ[ bi ], zb = bentZ[ bi + 1 ];
 			const px = X + side * PIER.pileOff;
 			const len = zb - za;
-			B.box( 'wood', px, railTop + 0.022, ( za + zb ) / 2, 0.2, 0.045, len + 0.16, { grain: 2, tint: tone(), data: pierWood( 0.65, 0.9 ) } );
+			const fresh = rand.chance( 0.12 );
+			B.box( 'wood', px + rand.range( - 0.01, 0.01 ), railTop + 0.022 + rand.range( - 0.012, 0.01 ), ( za + zb ) / 2, 0.2, 0.045, len + 0.16, {
+				grain: 2, rx: rand.range( - 0.006, 0.006 ), rz: rand.range( - 0.01, 0.01 ), tint: fresh ? freshTone() : tone(), data: fresh ? WOOD( rand.next(), 0.3, 0, 0 ) : pierWood( 0.7, 1 ),
+			} );
 			const mx = px - side * ( PIER.pileR + 0.03 );
-			B.box( 'wood', mx, DK + 0.48, ( za + zb ) / 2, 0.05, 0.14, len + 0.1, { grain: 2, tint: tone(), data: pierWood( 0.65, 0.95 ) } );
+			// the mid rail: a few have come off one end and hang, one or two are gone
+			const mr = rand.next();
+			if ( mr > 0.04 ) {
+
+				const drop = mr < 0.1 ? rand.range( 0.15, 0.35 ) : 0;
+				const dropA = rand.chance( 0.5 );
+				B.beam( 'wood', [ mx, DK + 0.48 + rand.range( - 0.012, 0.012 ) - ( dropA ? drop : 0 ), za - 0.05 ], [ mx, DK + 0.48 + rand.range( - 0.012, 0.012 ) - ( dropA ? 0 : drop ), zb + 0.05 ], 0.05, 0.14, { tint: tone(), data: pierWood( 0.7, 1 ) } );
+
+			}
 			addBox( px, DK + 0.55, ( za + zb ) / 2, 0.09, 0.55, len / 2, { tag: 'pierRail' } );
 
 		}
@@ -223,7 +309,7 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 		if ( bi >= lastBent ) continue;
 		const lx = X + side * ( halfW - 0.1 ), lz = bentZ[ bi ] + 0.32;
 		const w = hang ? hungLampPost( B, hang, info, lx, DK, lz, - side * Math.PI / 2, 3.1, rand.next() ) : lampPost( B, lx, DK, lz, - side * Math.PI / 2, 3.1, rand.next() );
-		lights.push( { position: w, color: new THREE.Color( 1.0, 0.72, 0.42 ), intensity: 5, kind: 'lantern' } );
+		lights.push( { position: w, color: new Color( 1.0, 0.72, 0.42 ), intensity: 5, kind: 'lantern' } );
 		info.lamps.push( w );
 		colliders.addCylinder( lx, lz, 0.1, DK, DK + 3.2, { tag: 'lampPost' } );
 
@@ -248,7 +334,7 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 		// the village swings it in the wind about the tops of the chains, info.signPivot)
 		const S = signB || B;
 		const sy = by - 0.52;
-		info.signPivot = new THREE.Vector3( X, by - 0.12, az + 0.02 );
+		info.signPivot = new Vector3( X, by - 0.12, az + 0.02 );
 		S.box( 'wood', X, sy, az + 0.02, 1.9, 0.52, 0.05, { grain: 0, tint: teal, data: WOOD( rand.next(), 0.6, 0.72, 6 ) } );
 		S.box( 'wood', X, sy, az + 0.02, 1.98, 0.6, 0.03, { grain: 0, tint: white, data: wd() } );
 		for ( const s of [ - 0.7, 0.7 ] ) S.rod( 'hard', [ X + s, sy + 0.26, az + 0.02 ], [ X + s, by - 0.12, az + 0.02 ], 0.008, 0.008, { segs: 4, tint: C.iron, data: HARD( rand.next(), 0.6, 0.6, 0.5 ) } );
@@ -260,13 +346,13 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 			for ( let i = 0; i < 14; i ++ ) {
 
 				const a = i / 14 * Math.PI * 2;
-				body.push( new THREE.Vector3( X - 0.1 + Math.cos( a ) * 0.5, sy + Math.sin( a ) * 0.17, zf ) );
+				body.push( new Vector3( X - 0.1 + Math.cos( a ) * 0.5, sy + Math.sin( a ) * 0.17, zf ) );
 
 			}
 
-			S.slab( 'wood', body, 0.01, { up: new THREE.Vector3( 0, 0, f ), uDir: new THREE.Vector3( 1, 0, 0 ), tint: coral, data: WOOD( rand.next(), 0.6, 0.75, 0 ) } );
-			S.slab( 'wood', [ new THREE.Vector3( X + 0.36, sy, zf ), new THREE.Vector3( X + 0.72, sy + 0.2, zf ), new THREE.Vector3( X + 0.66, sy, zf ), new THREE.Vector3( X + 0.72, sy - 0.2, zf ) ].slice( 0, 3 ), 0.01, { up: new THREE.Vector3( 0, 0, f ), tint: coral, data: WOOD( rand.next(), 0.6, 0.75, 0 ) } );
-			S.slab( 'wood', [ new THREE.Vector3( X + 0.36, sy, zf ), new THREE.Vector3( X + 0.66, sy, zf ), new THREE.Vector3( X + 0.72, sy - 0.2, zf ) ], 0.01, { up: new THREE.Vector3( 0, 0, f ), tint: coral, data: WOOD( rand.next(), 0.6, 0.75, 0 ) } );
+			S.slab( 'wood', body, 0.01, { up: new Vector3( 0, 0, f ), uDir: new Vector3( 1, 0, 0 ), tint: coral, data: WOOD( rand.next(), 0.6, 0.75, 0 ) } );
+			S.slab( 'wood', [ new Vector3( X + 0.36, sy, zf ), new Vector3( X + 0.72, sy + 0.2, zf ), new Vector3( X + 0.66, sy, zf ), new Vector3( X + 0.72, sy - 0.2, zf ) ].slice( 0, 3 ), 0.01, { up: new Vector3( 0, 0, f ), tint: coral, data: WOOD( rand.next(), 0.6, 0.75, 0 ) } );
+			S.slab( 'wood', [ new Vector3( X + 0.36, sy, zf ), new Vector3( X + 0.66, sy, zf ), new Vector3( X + 0.72, sy - 0.2, zf ) ], 0.01, { up: new Vector3( 0, 0, f ), tint: coral, data: WOOD( rand.next(), 0.6, 0.75, 0 ) } );
 			S.cyl( 'hard', X - 0.42, sy + 0.04, zf + f * 0.006, 0.035, 0.035, 0.008, { segs: 8, rx: f * Math.PI / 2, tint: C.black, data: HARD( rand.next(), 0, 0, 0.4 ) } );
 
 		}
@@ -280,16 +366,16 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 			if ( hang ) {
 
 				B.torus( 'hard', hx, by - 0.125, hz, 0.02, 0.005, { rx: Math.PI / 2, radial: 3, tubular: 6, tint: C.iron, data: HARD( 0.5, 0.35, 0.5, 0.45 ) } );
-				pos = hangLantern( hang, info, new THREE.Vector3( hx, by - 0.12, hz ), rand.next(), 0.9, 0.1 );
+				pos = hangLantern( hang, info, new Vector3( hx, by - 0.12, hz ), rand.next(), 0.9, 0.1 );
 
 			} else {
 
 				const c = lantern( B, hx, by - 0.12, hz, rand.next(), 0.9 );
-				pos = new THREE.Vector3( c[ 0 ], c[ 1 ], c[ 2 ] );
+				pos = new Vector3( c[ 0 ], c[ 1 ], c[ 2 ] );
 
 			}
 
-			lights.push( { position: pos, color: new THREE.Color( 1.0, 0.72, 0.42 ), intensity: 4, kind: 'lantern' } );
+			lights.push( { position: pos, color: new Color( 1.0, 0.72, 0.42 ), intensity: 4, kind: 'lantern' } );
 
 		}
 
@@ -329,7 +415,7 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 
 		}
 
-		info.stepFoot = new THREE.Vector3( X, ground( X, z0 - run - 0.3 ), z0 - run - 0.3 );
+		info.stepFoot = new Vector3( X, ground( X, z0 - run - 0.3 ), z0 - run - 0.3 );
 
 	}
 
@@ -390,11 +476,7 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 		for ( let j = 0; j < joints.length - 1; j ++ ) {
 
 			const xa = joints[ j ] + 0.004, xb = joints[ j + 1 ] - 0.004;
-			const newer = rand.chance( 0.05 );
-			B.box( 'wood', ( xa + xb ) / 2, DK - plankT / 2 - rand.range( 0, 0.006 ), zc, xb - xa, plankT, 0.2, {
-				grain: 0, ry: rand.range( - 0.004, 0.004 ), rx: rand.range( - 0.01, 0.01 ),
-				tint: newer ? [ 1.15, 1.03, 0.88 ] : tone(), data: WOOD( rand.next(), newer ? rand.range( 0.05, 0.25 ) : rand.range( 0.5, 0.95 ), 0, 7 ),
-			} );
+			plank( ( xa + xb ) / 2, zc, xb - xa - 0.1, true );
 
 		}
 
@@ -432,12 +514,12 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 		ropeLoop( B, bx, DK + 0.36, bz, 0.155, null, rand.next() );
 		ropeCoil( B, bx - 0.75, DK, bz + ( bz < 36 ? 0.35 : - 0.35 ), 0.08, 0.3, 4, rand.next() );
 		colliders.addCylinder( bx, bz, 0.22, DK, DK + 0.5, { tag: 'bollard' } );
-		info.bollards.push( new THREE.Vector3( bx, DK + 0.45, bz ) );
+		info.bollards.push( new Vector3( bx, DK + 0.45, bz ) );
 
 	}
 
 	cleat( B, edgeX - 0.22, DK, 36.5, Math.PI / 2, rand.next() );
-	info.bollards.push( new THREE.Vector3( edgeX - 0.22, DK + 0.1, 36.5 ) );
+	info.bollards.push( new Vector3( edgeX - 0.22, DK + 0.1, 36.5 ) );
 
 	// tyre fenders on the berthing face
 	for ( const fz of [ 33.75, 36.0, 37.35, 39.25 ] ) tireFender( B, edgeX, DK - 0.04, fz, 0, rand.range( 0.65, 0.85 ), rand.next() );
@@ -456,7 +538,7 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 			for ( let i = 0; i <= 6; i ++ ) {
 
 				const a = i / 6 * Math.PI;
-				arc.push( new THREE.Vector3( lx - 0.25 + Math.cos( a ) * 0.25, yt - 0.15 + Math.sin( a ) * 0.15, rzs ) );
+				arc.push( new Vector3( lx - 0.25 + Math.cos( a ) * 0.25, yt - 0.15 + Math.sin( a ) * 0.15, rzs ) );
 
 			}
 
@@ -483,7 +565,7 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 
 		}
 
-		info.ladder = new THREE.Vector3( lx, DK, lz );
+		info.ladder = new Vector3( lx, DK, lz );
 
 	}
 
@@ -532,14 +614,31 @@ export function buildPier( { B, terrain, colliders, rand, lights, inst, signB = 
 	for ( const [ lx, lz, yaw ] of [ [ hx0 + 0.55, z1 - 0.55, 3 * Math.PI / 4 ], [ hx1 - 0.6, z1 - 0.55, - 3 * Math.PI / 4 ], [ hx0 + 0.55, zH + 0.6, Math.PI / 4 ] ] ) {
 
 		const w = hang ? hungLampPost( B, hang, info, lx, DK, lz, yaw, 3.1, rand.next() ) : lampPost( B, lx, DK, lz, yaw, 3.1, rand.next() );
-		lights.push( { position: w, color: new THREE.Color( 1.0, 0.72, 0.42 ), intensity: 5, kind: 'lantern' } );
+		lights.push( { position: w, color: new Color( 1.0, 0.72, 0.42 ), intensity: 5, kind: 'lantern' } );
 		info.lamps.push( w );
 		colliders.addCylinder( lx, lz, 0.1, DK, DK + 3.2, { tag: 'lampPost' } );
 
 	}
 
-	// a few things along the walkway
+	// a few things along the walkway: gear left where it was last used
 	bucket( B, X + 0.9, DK, - 21.3, C.white, rand.next() );
+	bucket( B, X - 0.95, DK, 12.6, C.orange, rand.next() );
+	ropeCoil( B, X + 0.85, DK, - 33.0, 0.07, 0.24, 3, rand.next(), C.ropeDark );
+	ropeCoil( B, X - 0.85, DK, 21.5, 0.06, 0.22, 4, rand.next() );
+	for ( const [ cz, side ] of [ [ - 47.3, 1 ], [ - 15.4, - 1 ], [ 27.8, 1 ] ] ) {
+
+		// a cleat on the deck edge with a line still made fast, trailing over the side
+		const cx = X + side * ( halfW - 0.18 );
+		cleat( B, cx, DK, cz, 0, rand.next() );
+		ropeLoop( B, cx, DK + 0.06, cz, 0.08, [ X + side * ( halfW + 0.35 ), DK - 1.4, cz + rand.range( - 0.4, 0.4 ) ], rand.next() );
+
+	}
+
+	inst.add( 'crate', X - 0.95, DK, - 3.1, 1.4, [ 0.9, 0.85, 0.8 ] );
+	inst.add( 'crate', X - 0.92, DK + 0.4, - 3.05, 1.2, [ 1.0, 0.95, 0.9 ] );
+	colliders.addBox( _v.set( X - 0.95, DK + 0.4, - 3.1 ), _h.set( 0.3, 0.4, 0.35 ), 0, { tag: 'crate' } );
+	inst.add( 'trap', X + 0.8, DK, 30.4, 0.05, [ 0.9, 0.9, 0.85 ] );
+	colliders.addBox( _v.set( X + 0.8, DK + 0.25, 30.4 ), _h.set( 0.48, 0.3, 0.28 ), 0.05, { tag: 'trap' } );
 	ropeCoil( B, X - 0.8, DK, 4.5, 0.07, 0.26, 4, rand.next(), C.ropeBlue );
 	inst.add( 'crate', X + 0.95, DK, - 40.2, 0.1, [ 1, 0.95, 0.9 ] );
 	colliders.addBox( _v.set( X + 0.95, DK + 0.2, - 40.2 ), _h.set( 0.33, 0.2, 0.24 ), 0.1, { tag: 'crate' } );
@@ -586,7 +685,7 @@ function hangLantern( hang, info, hook, seed, scale, chain ) {
 	}
 
 	const c = lantern( LB, hook.x, hook.y - n * pitch, hook.z, seed, scale );
-	const center = new THREE.Vector3( c[ 0 ], c[ 1 ], c[ 2 ] );
+	const center = new Vector3( c[ 0 ], c[ 1 ], c[ 2 ] );
 	info.hung.push( { B: LB, pivot: hook.clone(), rest: center.clone(), live: center } );
 	return center;
 

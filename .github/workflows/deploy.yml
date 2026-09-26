@@ -24,6 +24,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # GPU-free tests (the headless GPU tests need a Vulkan driver the runners do not have)
+      - run: npm run test:unit
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

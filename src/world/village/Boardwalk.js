@@ -1,18 +1,18 @@
-import * as THREE from 'three/webgpu';
+import { CatmullRomCurve3, Color, Vector3 } from '../../engine/index.js';
 import { WOOD, pathLight } from '../Props.js';
 
 // Raised timber boardwalk following a smooth curve over the terrain.
 // pts: [[x, z], ...] world control points. Returns the sampled centerline (for layout checks).
 
-const _v = new THREE.Vector3();
-const _h = new THREE.Vector3();
+const _v = new Vector3();
+const _h = new Vector3();
 
 export function buildBoardwalk( ctx, pts, opts = {} ) {
 
 	const { B, terrain, colliders, rand, lights, checks } = ctx;
 	const width = opts.width ?? 1.8;
 	const lift = opts.lift ?? 0.26;
-	const curve = new THREE.CatmullRomCurve3( pts.map( ( p ) => new THREE.Vector3( p[ 0 ], 0, p[ 1 ] ) ), false, 'centripetal' );
+	const curve = new CatmullRomCurve3( pts.map( ( p ) => new Vector3( p[ 0 ], 0, p[ 1 ] ) ), false, 'centripetal' );
 	const L = curve.getLength();
 	const pitch = 0.2;
 	const n = Math.floor( L / pitch );
@@ -89,8 +89,8 @@ export function buildBoardwalk( ctx, pts, opts = {} ) {
 		const newer = rand.chance( 0.05 );
 		B.box( 'wood', s.p.x + rand.range( - 0.02, 0.02 ) * s.nx, deck[ i ] - 0.021 - rand.range( 0, 0.005 ), s.p.z + rand.range( - 0.02, 0.02 ) * s.nz, width + rand.range( - 0.04, 0.03 ), 0.042, 0.182, {
 			grain: 0, skip: 8, ry: s.yaw + rand.range( - 0.01, 0.01 ), rx: - Math.atan( slope ),
-			tint: newer ? [ 1.12, 1.02, 0.9 ] : ( ( k, w ) => [ k * ( 1 + w ), k, k * ( 1 - w ) ] )( rand.range( 0.86, 1.08 ), rand.range( - 0.01, 0.04 ) ),
-			data: WOOD( rand.next(), newer ? 0.2 : rand.range( 0.55, 0.95 ), 0, 7 ),
+			tint: newer ? [ 1.06, 1.0, 0.93 ] : ( ( k, w ) => [ k * ( 1 + w ), k, k * ( 1 - w ) ] )( rand.range( 0.86, 1.08 ), rand.range( - 0.01, 0.04 ) ),
+			data: WOOD( rand.next(), newer ? 0.35 : rand.range( 0.6, 1.0 ), 0, 7 ),
 		} );
 
 	}
@@ -173,7 +173,7 @@ export function buildBoardwalk( ctx, pts, opts = {} ) {
 		const px = s.p.x + s.nx * o, pz = s.p.z + s.nz * o;
 		const g = terrain.heightAt( px, pz );
 		const w = pathLight( B, px, g - 0.25, pz, rand.next() );
-		lights.push( { position: w, color: new THREE.Color( 1.0, 0.7, 0.4 ), intensity: 2.5, kind: 'pathLight' } );
+		lights.push( { position: w, color: new Color( 1.0, 0.7, 0.4 ), intensity: 2.5, kind: 'pathLight' } );
 		colliders.addCylinder( px, pz, 0.1, g - 0.25, g + 0.95, { tag: 'pathLight' } );
 		checks.push( { x: px, y: g - 0.25, z: pz } );
 		side = - side;
